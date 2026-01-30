@@ -1,0 +1,26 @@
+# --- Python & Cache ---
+__pycache__/
+*.py[cod]
+*.ipynb_checkpoints/
+
+# --- Logs Airflow ---
+logs/
+
+# --- Infrastructure & Volumes Docker ---
+localstack_data/
+postgres_data/
+
+# --- Données (Data) ---
+data/processed/
+
+# --- Environnement & Configuration locale ---
+.env
+.venv/
+venv/
+env/
+
+# --- IDE & Système ---
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
