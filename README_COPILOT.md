@@ -174,4 +174,14 @@ user739,2025-07-15,France,Grilled Tenders,1,8.76,8.76
 └── localstack_data/            # LocalStack S3 simulation storage
 ```
 
+## ✅ Ce qui est déjà fait
+
+1. **Infrastructure :** Le `docker-compose.yml` tourne avec succès (Airflow, Postgres, LocalStack).
+2. **Pipeline A (Batch) :** TERMINÉE. Le DAG `sales_pipeline.py` fonctionne avec `PythonOperator`. Les données brutes vont dans S3, sont processées par Pandas, et sont chargées proprement (TRUNCATE + INSERT) dans PostgreSQL via les scripts du dossier `src/`.
+3. **Git :** Projet versionné avec un `.gitignore` propre.
+
+## 🎯 Prochain Objectif
+
+Choisir entre attaquer la **Pipeline B (Temps réel/API/Kafka)** ou créer le **Dashboard Streamlit** pour la Pipeline A.
+
 **Note :** Les dossiers `sql/`, `api/`, et `dashboard/` ne sont pas présents pour l'instant. Ils seront créés si nécessaire pour SQL scripts, FastAPI app, ou Streamlit dashboard.

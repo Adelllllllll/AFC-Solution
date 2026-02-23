@@ -68,25 +68,23 @@ graph TD
 ```bash
 .
 ├── dags/
-│   └── sales_pipeline.py       # Main Airflow DAG (Pipelines A & B)
+│   └── sales_pipeline.py       # DAG Airflow orchestrant la pipeline batch
 ├── data/
-│   ├── raw/                    # Raw data samples
-│   │   ├── sales_data.csv      # Sales data
-│   │   └── feedback_data.json  # Reviews/Feedback history
-│   └── processed/
-│       └── cleaned_sales_data.csv
-├── src/                        # Python modules
-│   ├── clean_data.py           # Data cleaning module
-│   ├── ingest_s3.py            # S3 ingestion module
-│   ├── load_postgres.py        # PostgreSQL loading module
-│   └── __init__.py
-├── explore_data.ipynb          # Data exploration notebook
-├── docker-compose.yml          # Infrastructure definition
-├── README.md                   # User documentation
-├── README_COPILOT.md           # Technical specifications
-├── requirements.txt            # Python dependencies
-└── logs/                       # DAG execution logs
+│   ├── raw/                    # Données brutes (ex: sales_data.csv)
+│   └── processed/              # Données nettoyées prêtes pour la BDD
+├── src/                        # Logique métier Python (PythonOperators)
+│   ├── ingest_s3.py            # Upload des données vers LocalStack S3
+│   ├── clean_data.py           # Nettoyage Pandas (Dédoublonnage, typage)
+│   └── load_postgres.py        # Insertion idempotente dans PostgreSQL
+├── docker-compose.yml          # Infrastructure locale (Airflow, Postgres, LocalStack)
+└── requirements.txt            # Dépendances Python
 ```
+
+## 📈 État d'avancement
+
+- **Étape 1 — Pipeline Batch:** ✅ Fait — Ingestion S3, Orchestration Airflow, Nettoyage Pandas, Chargement idempotent dans PostgreSQL (TRUNCATE + INSERT).
+- **Étape 2 — Pipeline Reviews (Temps réel/API/Kafka):** ⏳ À venir
+- **Étape 3 — Dashboard / Streamlit:** ⏳ À venir
 
 ---
 
