@@ -13,6 +13,8 @@ postgres_data/
 # --- Données (Data) ---
 data/raw/*
 data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
 
 # --- Environnement & Configuration locale ---
 .env
