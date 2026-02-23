@@ -12,8 +12,9 @@ x-airflow-common:
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
     # Add src folder to Python path for imports
     PYTHONPATH: /opt/airflow
-    # Auto-install dependencies at startup
-    _PIP_ADDITIONAL_REQUIREMENTS: "pandas boto3 sqlalchemy psycopg2-binary"
+    
+    # --- NOUVEAU : Ajout de fastapi, uvicorn et pydantic pour qu'Airflow puisse lire nos fichiers src/ sans crasher ---
+    _PIP_ADDITIONAL_REQUIREMENTS: "pandas boto3 sqlalchemy psycopg2-binary fastapi uvicorn pydantic"
     
     # Configuration for pipeline scripts
     # PostgreSQL connection settings
@@ -65,12 +66,33 @@ services:
     volumes:
       - "./localstack_data:/var/lib/localstack"
 
+  # --- NOUVEAU : Le bloc FastAPI pour la Pipeline B ---
+  fastapi:
+    image: python:3.10-slim
+    container_name: ndai_fastapi
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+    volumes:
+      - ./src:/app/src
+      - ./requirements.txt:/app/requirements.txt
+    working_dir: /app
+    command: bash -c "pip install -r requirements.txt && uvicorn src.api_feedback:app --host 0.0.0.0 --port 8000 --reload"
+    ports:
+      - "8080:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   # Airflow Webserver: web UI for monitoring
   airflow-webserver:
     <<: *airflow-common
     command: webserver
     ports:
-      - "8080:8080"
+      - "8081:8080"
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
       interval: 10s

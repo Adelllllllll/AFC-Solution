@@ -26,17 +26,17 @@ graph TD
         Clean -->|Load| DB[(PostgreSQL)]
     end
 
-    subgraph "Pipeline B: Reviews (Real-time ELT)"
-        User[User Feedback] -->|POST Request| API[FastAPI]
-        File[History JSON] -->|Init Load| API
-        API -->|Insert JSONB| DB
-        DB -- Raw Data --> DAG2[Airflow DAG: AI Process]
-        DAG2 -- NLTK Sentiment Analysis --> DAG2
-        DAG2 -->|Update Score| DB
+    subgraph "Pipeline B: Feedbacks (Real-time Micro-Batch)"
+        User[Customer Feedback] -->|POST /afc/api| API[FastAPI]
+        API -->|Validate| Pydantic[Pydantic]
+        Pydantic -->|Valid| NLP[Sentiment Stub]
+        NLP -->|Insert| DB
+        Pydantic -->|Invalid| DLQ[(Rejected DLQ)]
+        DLQ -->|Store| DB
     end
 
     subgraph "Analytics Layer"
-        DB -->|SQL View| Streamlit[Streamlit Dashboard]
+        DB -->|SQL Query| Dashboard[Streamlit Dashboard]
     end
 ```
 

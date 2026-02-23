@@ -13,11 +13,9 @@ try:
     from src.clean_data import run_cleaning_pipeline
     from src.load_postgres import run_loading_pipeline
 except ImportError as e:
-    # If imports fail, set to None to prevent webserver crash
-    print(f"Import error: {e}")
-    raw_to_s3 = None
-    run_cleaning_pipeline = None
-    run_loading_pipeline = None
+    # Au lieu de mettre "None", on lève une vraie erreur bloquante
+    raise ImportError(f"❌ CRITICAL: Failed to import pipeline modules. {e}. "
+                      f"Ensure PYTHONPATH includes /opt/airflow.") from e
 
 default_args = {
     'owner': 'airflow',

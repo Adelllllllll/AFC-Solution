@@ -24,3 +24,7 @@ env/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# --- md persos ---
+README_CPOILOT.md
+rapport.md

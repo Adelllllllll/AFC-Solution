@@ -1,11 +1,7 @@
-os
-logging
-boto3
-botocore.exceptions
 pandas
-io
+boto3
 sqlalchemy
 psycopg2-binary
-airflow
-sys
-datetime
+fastapi
+uvicorn
+pydantic
