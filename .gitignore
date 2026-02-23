@@ -11,8 +11,8 @@ localstack_data/
 postgres_data/
 
 # --- Données (Data) ---
-data/raw/
-data/processed/
+data/raw/*
+data/processed/*
 
 # --- Environnement & Configuration locale ---
 .env
