@@ -26,7 +26,8 @@ env/
 .DS_Store
 Thumbs.db
 
-# --- md persos ---
-README_CPOILOT.md
+# --- fichiers persos ---
+README_COPILOT.md
 README_testdata.md
 rapport.md
+explore_data.ipynb
