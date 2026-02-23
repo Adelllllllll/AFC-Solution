@@ -180,8 +180,93 @@ user739,2025-07-15,France,Grilled Tenders,1,8.76,8.76
 2. **Pipeline A (Batch) :** TERMINÉE. Le DAG `sales_pipeline.py` fonctionne avec `PythonOperator`. Les données brutes vont dans S3, sont processées par Pandas, et sont chargées proprement (TRUNCATE + INSERT) dans PostgreSQL via les scripts du dossier `src/`.
 3. **Git :** Projet versionné avec un `.gitignore` propre.
 
-## 🎯 Prochain Objectif
+## 🎯 Prochain Objectif : Pipeline B (Temps Réel - Micro-Batch FastAPI)
 
-Choisir entre attaquer la **Pipeline B (Temps réel/API/Kafka)** ou créer le **Dashboard Streamlit** pour la Pipeline A.
+### Objectif
+Développer la **Pipeline B** pour l'ingestion et le traitement temps réel des avis clients via une architecture micro-batch légère.
+
+### Contraintes Immuables
+- **AUCUN Kafka** — Pas de broker de messages complexe.
+- **AUCUN Spark Streaming** — Pas de traitement distribué.
+- **AUCUN Airflow** — Cette partie reste indépendante de l'orchestration Airflow.
+
+### Architecture Détaillée
+
+#### 1. API FastAPI (`src/api_feedback.py`)
+- Expose un endpoint `POST /feedbacks` qui reçoit une liste d'objets JSON.
+- Utilise **Pydantic** pour valider chaque objet individuellement (granularité par objet, pas par batch).
+- Chaque objet valide :
+  - Est inséré dans la table PostgreSQL `feedbacks`.
+  - Reçoit une analyse de sentiment via **NLTK** → colonne `sentiments` (1 = Positif/Neutre, 0 = Négatif).
+- Chaque objet invalide :
+  - Est inséré dans la table PostgreSQL `rejected_feedbacks` avec le motif du rejet.
+  - N'est pas traité.
+
+#### 2. Micro-Batch Script (`__main__.py PUSH N`)
+- Script local qui envoie N avis depuis `data/raw/feedback_data.json` vers l'API FastAPI.
+- Commande : `python __main__.py PUSH 5` envoie 5 avis.
+- Réceptionne le rapport partiel (succès + rejets + métriques).
+
+#### 3. Modèle de Données (PostgreSQL)
+
+**Table `feedbacks`**
+```sql
+CREATE TABLE feedbacks (
+  id SERIAL PRIMARY KEY,
+  username VARCHAR,
+  feedback_date DATE,
+  campaign_id VARCHAR,
+  comment TEXT,
+  sentiments INT (0 ou 1),
+  ingestion_date TIMESTAMP DEFAULT NOW()
+);
+```
+
+**Table `rejected_feedbacks`**
+```sql
+CREATE TABLE rejected_feedbacks (
+  id SERIAL PRIMARY KEY,
+  raw_data TEXT,  -- JSON brut reçu
+  rejection_reason VARCHAR,  -- Motif du rejet (ex: "missing 'comment'", "invalid date")
+  ingestion_date TIMESTAMP DEFAULT NOW()
+);
+```
+
+#### 4. Flux de Traitement
+```
+Client/Script
+    ↓
+POST /feedbacks [JSON array]
+    ↓
+FastAPI Endpoint
+    ↓
+Pydantic Validation (par objet)
+    ↓
+┌─── Valide ──────────────────────┐
+│  NLTK Sentiment Analysis    │
+│  Insert into feedbacks (+ score)│
+└────────────────────────────────┘
+│
+└─── Invalide ────────────────────┐
+│  Insert into rejected_feedbacks │
+│  (avec motif du rejet)          │
+└────────────────────────────────┘
+    ↓
+Response JSON:
+{
+  "success_count": 4,
+  "rejection_count": 1,
+  "quality_percentage": 80.0,
+  "rejections": [
+    {"index": 2, "reason": "missing 'campaign_id'"}
+  ]
+}
+```
+
+#### 5. Intégration Docker
+- FastAPI doit être un **nouveau service** dans `docker-compose.yml`.
+- Port : `8000` (Uvicorn).
+- Dépendance : PostgreSQL doit être up avant le démarrage.
+- Réseau : `ndai_network` (comme tous les autres services).
 
 **Note :** Les dossiers `sql/`, `api/`, et `dashboard/` ne sont pas présents pour l'instant. Ils seront créés si nécessaire pour SQL scripts, FastAPI app, ou Streamlit dashboard.

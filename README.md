@@ -54,10 +54,11 @@ graph TD
 | :--- | :--- | :--- |
 | **Language** | Python 3.10+ | Core development |
 | **Database** | PostgreSQL | Relation + Document store |
-| **Orchestration** | Apache Airflow | Workflow scheduling & dependency management |
-| **API** | FastAPI | Real-time data ingestion endpoint |
+| **Orchestration** | Apache Airflow | Workflow scheduling (Pipeline A only) |
+| **API** | FastAPI + Uvicorn | Real-time micro-batch ingestion (Pipeline B) |
 | **Storage** | LocalStack | AWS S3 simulation for batch files |
-| **AI / NLP** | NLTK | Sentiment analysis processing |
+| **Validation** | Pydantic | Input validation & Dead Letter Queue |
+| **NLP / Sentiment** | NLTK | Binary sentiment classification |
 | **Visualization** | Streamlit | Interactive BI Dashboard |
 | **Containerization** | Docker Compose | Full stack deployment |
 
@@ -83,7 +84,10 @@ graph TD
 ## 📈 État d'avancement
 
 - **Étape 1 — Pipeline Batch:** ✅ Fait — Ingestion S3, Orchestration Airflow, Nettoyage Pandas, Chargement idempotent dans PostgreSQL (TRUNCATE + INSERT).
-- **Étape 2 — Pipeline Reviews (Temps réel/API/Kafka):** ⏳ À venir
+- **Étape 2 — Pipeline Temps Réel (FastAPI Micro-Batch):** 🔄 En cours
+  - 🔄 API FastAPI pour micro-batching (`POST /feedbacks`)
+  - 🔄 Analyse de sentiment binaire NLTK
+  - 🔄 Dead Letter Queue (rejet + validation Pydantic)
 - **Étape 3 — Dashboard / Streamlit:** ⏳ À venir
 
 ---
@@ -130,24 +134,36 @@ The system simulates an S3 upload via LocalStack.
 2.  Trigger the **`sales_daily_ingest`** task in the Airflow DAG `sales_pipeline`.
 3.  Monitor execution in the logs and check Streamlit dashboard for results.
 
-### 3. Running Pipeline B (Reviews AI)
-**Option A: Load History**
-The system automatically loads `feedback_data.json` from `data/raw/` via the FastAPI initialization script.
+### 3. Running Pipeline B (Customer Reviews - Real-Time)
+Pipeline B implements a lightweight micro-batch architecture via FastAPI (no Kafka, no Spark).
 
-**Option B: Real-time Ingestion**
-Send a POST request to the FastAPI endpoint:
+**Architecture:**
+- **Ingestion:** Python script (`python __main__.py PUSH N`) sends micro-batches of customer feedback JSON to FastAPI.
+- **API Endpoint:** `POST /feedbacks` receives a list of feedback objects.
+- **Sentiment Analysis:** NLTK classification assigns `sentiments` (1 = Positive/Neutral, 0 = Negative).
+- **Fault Tolerance (DLQ):** Pydantic validates each object. Valid feedbacks → `feedbacks` table. Corrupted objects → `rejected_feedbacks` table (with rejection reason) for quality metrics.
+
+**Example:** Send feedbacks via micro-batch script:
+```bash
+python __main__.py PUSH 5  # Push 5 feedbacks from data/raw/feedback_data.json
+```
+
+**Manual Test (curl):**
 ```bash
 curl -X 'POST' \
-  'http://localhost:8000/feedback/' \
+  'http://localhost:8000/feedbacks' \
   -H 'Content-Type: application/json' \
-  -d '{
-  "username": "user_demo",
-  "feedback_date": "2025-11-20",
-  "campaign_id": "CAMP_DEMO",
-  "comment": "The new chicken wings are fantastic!"
-}'
+  -d '[
+  {
+    "username": "user_demo",
+    "feedback_date": "2025-11-20",
+    "campaign_id": "CAMP_DEMO",
+    "comment": "The new chicken wings are fantastic!"
+  }
+]'
 ```
-Wait for the **`reviews_ai_processing`** task in `sales_pipeline` DAG to run (scheduled every 30 mins) or trigger it manually. The NLTK VADER sentiment analysis will update the Sentiment Score column.
+
+Response includes success count, rejection count, and quality metrics.
 
 ---
 
