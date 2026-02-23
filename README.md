@@ -1,11 +1,4 @@
-# 🍗 N.D.A.I - Nugget Data & AI Initiative
-
-![Status](https://img.shields.io/badge/Status-Active-success)
-![Lead](https://img.shields.io/badge/Piloted%20by-Capgemini-0070AD)
-![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
-![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
-![Airflow](https://img.shields.io/badge/Orchestration-Apache%20Airflow-teal)
-![PostgreSQL](https://img.shields.io/badge/Database-PostgreSQL%20%28Relational%20%2B%20JSONB%29-336791)
+# N.D.A.I - Nugget Data & AI Initiative
 
 **N.D.A.I** is a strategic Digital Transformation project **piloted by Capgemini** for its client, **Armoric Fried Chicken (AFC)**. 
 
@@ -13,7 +6,7 @@ Following AFC's recent global expansion, Capgemini was tasked to engineer a resi
 
 ---
 
-## 🏗️ Architecture Overview
+## Architecture Overview
 
 The solution implemented by Capgemini relies on a **Hybrid Pipeline Architecture** (ETL + ELT) converging into a single PostgreSQL engine to minimize infrastructure costs while maximizing agility.
 
@@ -47,7 +40,7 @@ graph TD
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 | Component | Technology | Usage |
 | :--- | :--- | :--- |
@@ -63,7 +56,7 @@ graph TD
 
 ---
 
-## 📂 Project Structure
+## Project Structure
 
 ```bash
 .
@@ -82,15 +75,15 @@ graph TD
 └── requirements.txt            # Dépendances Python
 ```
 
-## 📈 État d'avancement
+## État d'avancement
 
-- **Étape 1 — Pipeline Batch:** ✅ Fait — Ingestion S3, Orchestration Airflow, Nettoyage Pandas, Chargement idempotent dans PostgreSQL (TRUNCATE + INSERT).
-- **Étape 2 — Pipeline Temps Réel (FastAPI Micro-Batch):** ✅ Implémentée. L'API traite désormais les avis en temps réel via `POST /afc/api`, réalise la validation Pydantic, exécute le NLP instantané et écrit directement dans PostgreSQL (success + DLQ).
+- **Étape 1 — Pipeline Batch:** Fait — Ingestion S3, Orchestration Airflow, Nettoyage Pandas, Chargement idempotent dans PostgreSQL (TRUNCATE + INSERT).
+- **Étape 2 — Pipeline Temps Réel (FastAPI Micro-Batch):** Implémentée. L'API traite désormais les avis en temps réel via `POST /afc/api`, réalise la validation Pydantic, exécute le NLP instantané et écrit directement dans PostgreSQL (success + DLQ).
 - **Étape 3 — Dashboard / Streamlit:** ⏳ À venir
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 * Docker & Docker Compose installed.
@@ -115,7 +108,7 @@ graph TD
 
 ---
 
-## 🖥️ Usage Guide
+## Usage Guide
 
 ### 1. Access Points
 * **Airflow UI:** `http://localhost:8081` (User/Pass: `airflow`/`airflow`)
@@ -162,7 +155,7 @@ Responses include success count, rejection count, quality percentage, and reject
 
 ---
 
-## 📊 Data Samples
+## Data Samples
 
 **Sales Data (CSV):**
 ```csv
