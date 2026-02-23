@@ -13,7 +13,9 @@ logger = logging.getLogger(__name__)
 LOCALSTACK_URL = os.getenv("LOCALSTACK_URL", "http://localstack:4566")
 BUCKET_NAME = os.getenv("S3_BUCKET_RAW", "sales-data-raw")
 RAW_FILE_PATH = os.getenv("RAW_FILE_PATH", "data/raw/sales_data.csv")
-OBJECT_NAME = os.getenv("S3_OBJECT_NAME", "sales_data.csv")
+OBJECT_SALES = os.getenv("S3_SALES_OBJECT", "sales_data.csv")
+RAW_CAMP_PATH = os.getenv("RAW_CAMP_PATH", "data/raw/campaign_product.csv")
+OBJECT_CAMP = os.getenv("S3_CAMP_OBJECT", "campaign_product.csv")
 
 def create_s3_client():
     """Initialize S3 client connected to LocalStack."""
@@ -80,8 +82,10 @@ def raw_to_s3():
     try:
         s3_client = create_s3_client()
         ensure_bucket_exists(s3_client, BUCKET_NAME)
-        upload_file_to_s3(s3_client, RAW_FILE_PATH, BUCKET_NAME, OBJECT_NAME)
-        verify_upload(s3_client, BUCKET_NAME, OBJECT_NAME)
+        upload_file_to_s3(s3_client, RAW_FILE_PATH, BUCKET_NAME, OBJECT_SALES)
+        verify_upload(s3_client, BUCKET_NAME, OBJECT_SALES)
+        upload_file_to_s3(s3_client, RAW_CAMP_PATH, BUCKET_NAME, OBJECT_CAMP)
+        verify_upload(s3_client, BUCKET_NAME, OBJECT_CAMP)
         logger.info("Step 1 completed successfully.")
     except Exception as e:
         logger.error("Step 1 failed: %s", e)

@@ -14,8 +14,10 @@ logger = logging.getLogger(__name__)
 # Load environment config for S3 and file paths
 LOCALSTACK_URL = os.getenv("LOCALSTACK_URL", "http://localstack:4566")
 BUCKET_NAME = os.getenv("S3_BUCKET_RAW", "sales-data-raw")
-OBJECT_NAME = os.getenv("S3_OBJECT_NAME", "sales_data.csv")
+OBJECT_SALES = os.getenv("S3_SALES_OBJECT", "sales_data.csv")
 CLEAN_FILE_PATH = os.getenv("CLEAN_FILE_PATH", "data/processed/cleaned_sales_data.csv")
+OBJECT_CAMP = os.getenv("S3_CAMP_OBJECT", "campaign_product.csv")
+CLEAN_CAMP_PATH = os.getenv("CLEAN_CAMP_PATH", "data/processed/cleaned_campaign_product.csv")
 
 def get_s3_client():
     """Initialize S3 client for LocalStack."""
@@ -27,11 +29,11 @@ def get_s3_client():
         region_name=os.getenv("AWS_DEFAULT_REGION", "us-east-1"),
     )
 
-def download_data(s3_client):
+def download_data(s3_client, object_name):
     """Fetch raw CSV from S3 and return as pandas DataFrame."""
-    logger.info(f"Downloading {OBJECT_NAME} from bucket {BUCKET_NAME}...")
+    logger.info(f"Downloading {object_name} from bucket {BUCKET_NAME}...")
     try:
-        response = s3_client.get_object(Bucket=BUCKET_NAME, Key=OBJECT_NAME)
+        response = s3_client.get_object(Bucket=BUCKET_NAME, Key=object_name)
         content = response['Body'].read().decode('utf-8')
         df = pd.read_csv(StringIO(content))
         logger.info(f"Data downloaded. Raw shape: {df.shape}")
@@ -78,6 +80,33 @@ def clean_data(df):
     
     return df
 
+def clean_campaign(df):
+    """Apply data cleaning transformations for campaign product mapping."""
+    logger.info("Starting campaign data cleaning...")
+    initial_count = len(df)
+    
+    # Remove duplicate rows
+    df = df.drop_duplicates()
+    
+    # Drop rows with missing values in critical columns
+    df = df.dropna(subset=['campaign_id', 'product'])
+    
+    final_count = len(df)
+    deleted = initial_count - final_count
+    logger.info(f"Campaign cleaning complete. Rows: {initial_count} -> {final_count} (Deleted: {deleted})")
+    
+    return df
+
+def save_clean_data_generic(df, path):
+    """Localy save the cleaned DataFrame to a specific path."""
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        df.to_csv(path, index=False)
+        logger.info(f"Fichier nettoyé sauvegardé sous: {path}")
+    except Exception as e:
+        logger.error(f"Impossible de sauvegarder le fichier nettoyé: {e}")
+        raise
+
 def save_clean_data(df):
     """Localy save the cleaned DataFrame."""
     try:
@@ -94,9 +123,17 @@ def run_cleaning_pipeline():
     """Main entry point: fetch, clean, and save data."""
     try:
         s3 = get_s3_client()
-        df_raw = download_data(s3)
+        
+        # 1. Clean Sales (Pipeline existante)
+        df_raw = download_data(s3, OBJECT_SALES)
         df_clean = clean_data(df_raw)
-        save_clean_data(df_clean)
+        save_clean_data_generic(df_clean, CLEAN_FILE_PATH)
+        
+        # 2. Clean Campaign/Product (Nouvelle Pipeline)
+        df_camp_raw = download_data(s3, OBJECT_CAMP)
+        df_camp_clean = clean_campaign(df_camp_raw)
+        save_clean_data_generic(df_camp_clean, CLEAN_CAMP_PATH)
+        
         logger.info("Pipeline de nettoyage terminé avec succès.")
     except Exception as e:
         logger.error(f"Echec du pipeline de nettoyage : {e}")

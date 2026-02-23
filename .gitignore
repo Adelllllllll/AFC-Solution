@@ -11,6 +11,7 @@ localstack_data/
 postgres_data/
 
 # --- Données (Data) ---
+data/raw/
 data/processed/
 
 # --- Environnement & Configuration locale ---
@@ -27,4 +28,5 @@ Thumbs.db
 
 # --- md persos ---
 README_CPOILOT.md
+README_testdata.md
 rapport.md

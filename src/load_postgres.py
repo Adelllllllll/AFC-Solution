@@ -16,9 +16,10 @@ DB_HOST = os.getenv("POSTGRES_HOST", "localhost")
 DB_PORT = os.getenv("POSTGRES_PORT", "5432")
 DB_NAME = os.getenv("POSTGRES_DB", "airflow")
 
-CLEAN_FILE_PATH = os.getenv("CLEAN_FILE_PATH", "data/processed/cleaned_sales_data.csv")
-TABLE_NAME = "sales"
-
+CLEAN_SALES_PATH = os.getenv("CLEAN_SALES_PATH", "data/processed/cleaned_sales_data.csv")
+TABLE_SALES_NAME = "sales"
+CLEAN_CAMP_PATH = os.getenv("CLEAN_CAMP_PATH", "data/processed/cleaned_campaign_product.csv")
+TABLE_CAMP_NAME = "campaign_product"
 def get_db_engine():
     """Create SQLAlchemy engine for PostgreSQL."""
     try:
@@ -30,9 +31,9 @@ def get_db_engine():
         raise
 
 def init_table(engine):
-    """Create sales table with schema if it doesn't exist."""
-    create_table_sql = f"""
-    CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
+    """Create tables with schema if they don't exist."""
+    create_sales_sql = f"""
+    CREATE TABLE IF NOT EXISTS {TABLE_SALES_NAME} (
         id SERIAL PRIMARY KEY,
         username VARCHAR(50),
         sale_date DATE NOT NULL,
@@ -44,40 +45,52 @@ def init_table(engine):
         loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """
+    
+    create_camp_sql = f"""
+    CREATE TABLE IF NOT EXISTS {TABLE_CAMP_NAME} (
+        id SERIAL PRIMARY KEY,
+        campaign_id VARCHAR(50),
+        product VARCHAR(100),
+        loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """
     try:
         with engine.begin() as conn:
-            conn.execute(text(create_table_sql))
-        logger.info(f"Table '{TABLE_NAME}' schema validated.")
+            conn.execute(text(create_sales_sql))
+            conn.execute(text(create_camp_sql))
+        logger.info(f"Tables '{TABLE_SALES_NAME}' and '{TABLE_CAMP_NAME}' schemas validated.")
     except Exception as e:
-        logger.error(f"Failed to create table: {e}")
+        logger.error(f"Failed to create tables: {e}")
         raise
 
 def clear_existing_data(engine):
-    """Truncate table before loading to prevent duplicates."""
+    """Truncate tables before loading to prevent duplicates."""
     try:
         with engine.begin() as conn:
-            conn.execute(text(f"TRUNCATE TABLE {TABLE_NAME};"))
-        logger.info(f"Table '{TABLE_NAME}' truncated to prevent duplicates.")
+            conn.execute(text(f"TRUNCATE TABLE {TABLE_SALES_NAME};"))
+            conn.execute(text(f"TRUNCATE TABLE {TABLE_CAMP_NAME};"))
+        logger.info(f"Tables '{TABLE_SALES_NAME}' and '{TABLE_CAMP_NAME}' truncated to prevent duplicates.")
     except Exception as e:
-        logger.error(f"Failed to clear table: {e}")
+        logger.error(f"Failed to clear tables: {e}")
         raise
 
-def load_data_to_postgres(engine):
+def load_data_to_postgres(engine, file_path, table_name):
     """Read cleaned CSV and insert into PostgreSQL."""
-    if not os.path.exists(CLEAN_FILE_PATH):
-        raise FileNotFoundError(f"Cleaned file not found: {CLEAN_FILE_PATH}")
+    if not os.path.exists(file_path):
+        logger.warning(f"Cleaned file not found: {file_path}. Skipping load for this table.")
+        return
 
-    logger.info(f"Reading file: {CLEAN_FILE_PATH}")
-    df = pd.read_csv(CLEAN_FILE_PATH)
+    logger.info(f"Reading file: {file_path}")
+    df = pd.read_csv(file_path)
 
     try:
-        logger.info(f"Inserting {len(df)} rows into '{TABLE_NAME}'...")
+        logger.info(f"Inserting {len(df)} rows into '{table_name}'...")
         
-        df.to_sql(TABLE_NAME, engine, if_exists='append', index=False)
+        df.to_sql(table_name, engine, if_exists='append', index=False)
         
-        logger.info(f"Loading completed successfully.")
+        logger.info(f"Loading to '{table_name}' completed successfully.")
     except Exception as e:
-        logger.error(f"Failed to insert data: {e}")
+        logger.error(f"Failed to insert data into '{table_name}': {e}")
         raise
 
 def run_loading_pipeline():
@@ -86,18 +99,19 @@ def run_loading_pipeline():
     try:
         engine = get_db_engine()
         
-        # Ensure table structure exists
+        # Ensure table structures exist
         init_table(engine)
         
         # Clear old data for idempotence
         clear_existing_data(engine)
         
         # Load new data
-        load_data_to_postgres(engine)
+        load_data_to_postgres(engine, CLEAN_SALES_PATH, TABLE_SALES_NAME)
+        load_data_to_postgres(engine, CLEAN_CAMP_PATH, TABLE_CAMP_NAME)
         
         logger.info("Loading pipeline completed.")
     except Exception as e:
-        logger.error(f"Loading pipeline failed.")
+        logger.error("Loading pipeline failed.")
         raise
 
 if __name__ == "__main__":

@@ -20,18 +20,17 @@ The solution implemented by Capgemini relies on a **Hybrid Pipeline Architecture
 ```mermaid
 graph TD
     subgraph "Pipeline A: Sales (Batch ETL)"
-        CSV[Sales CSV] -->|Upload| S3[LocalStack S3]
+        CSV1[Sales CSV] & CSV2[Campaign‑Product CSV] -->|Upload| S3[LocalStack S3]
         S3 -->|Extract| DAG1[Airflow DAG: Ingest]
         DAG1 -->|Transform: Pandas| Clean[Cleaned Data]
-        Clean -->|Load| DB[(PostgreSQL)]
+        Clean -->|Load| DB[(PostgreSQL - sales + campaign_product)]
     end
 
-    subgraph "Pipeline B: Feedbacks (Real-time Micro-Batch)"
+    subgraph "Pipeline B: Feedbacks (Real-time Sync)"
         User[Customer Feedback] -->|POST /afc/api| API[FastAPI]
-        API -->|Validate| Pydantic[Pydantic]
-        Pydantic -->|Valid| NLP[Sentiment Stub]
-        NLP -->|Insert| DB
-        Pydantic -->|Invalid| DLQ[(Rejected DLQ)]
+        API -->|Validate & NLP| PydanticNLTK[Pydantic + NLTK]
+        PydanticNLTK -->|Insert success| DB
+        PydanticNLTK -->|Insert failure| DLQ[(Rejected DLQ)]
         DLQ -->|Store| DB
     end
 
@@ -43,7 +42,7 @@ graph TD
 ### Key Technical Features
 * **Unified Storage:** PostgreSQL handles both structured relational data (`Sales`) and semi-structured data (`Reviews` as **JSONB**).
 * **LocalStack Integration:** Simulates AWS S3 for a realistic cloud-native batch workflow.
-* **AI-Powered:** Uses **NLTK VADER** to compute sentiment scores from raw text asynchronously.
+* **AI-Powered:** Uses **NLTK VADER** to compute sentiment scores synchronously within the API.
 * **Infrastructure as Code:** 100% Dockerized environment.
 
 ---
@@ -69,25 +68,24 @@ graph TD
 ```bash
 .
 ├── dags/
-│   └── sales_pipeline.py       # DAG Airflow orchestrant la pipeline batch
+│   └── sales_pipeline.py       # DAG Airflow orchestrant la pipeline batch (sales + campaign_product)
 ├── data/
-│   ├── raw/                    # Données brutes (ex: sales_data.csv)
+│   ├── raw/                    # Données brutes (sales_data.csv & campaign_product.csv)
+│   │   └── feedback_data.json  # Historique d'avis
 │   └── processed/              # Données nettoyées prêtes pour la BDD
-├── src/                        # Logique métier Python (PythonOperators)
+├── src/                        # Logique métier Python (PythonOperators + API)
 │   ├── ingest_s3.py            # Upload des données vers LocalStack S3
 │   ├── clean_data.py           # Nettoyage Pandas (Dédoublonnage, typage)
-│   └── load_postgres.py        # Insertion idempotente dans PostgreSQL
-├── docker-compose.yml          # Infrastructure locale (Airflow, Postgres, LocalStack)
+│   ├── load_postgres.py        # Insertion idempotente dans PostgreSQL
+│   └── api_feedback.py         # FastAPI endpoint /afc/api (synchronous micro‑batch)
+├── docker-compose.yml          # Infrastructure locale (Airflow, Postgres, LocalStack, FastAPI)
 └── requirements.txt            # Dépendances Python
 ```
 
 ## 📈 État d'avancement
 
 - **Étape 1 — Pipeline Batch:** ✅ Fait — Ingestion S3, Orchestration Airflow, Nettoyage Pandas, Chargement idempotent dans PostgreSQL (TRUNCATE + INSERT).
-- **Étape 2 — Pipeline Temps Réel (FastAPI Micro-Batch):** 🔄 En cours
-  - 🔄 API FastAPI pour micro-batching (`POST /feedbacks`)
-  - 🔄 Analyse de sentiment binaire NLTK
-  - 🔄 Dead Letter Queue (rejet + validation Pydantic)
+- **Étape 2 — Pipeline Temps Réel (FastAPI Micro-Batch):** ✅ Implémentée. L'API traite désormais les avis en temps réel via `POST /afc/api`, réalise la validation Pydantic, exécute le NLP instantané et écrit directement dans PostgreSQL (success + DLQ).
 - **Étape 3 — Dashboard / Streamlit:** ⏳ À venir
 
 ---
@@ -107,10 +105,7 @@ graph TD
     ```
 
 2.  **Environment Setup**
-    Create a `.env` file based on the example (or use default values in docker-compose):
-    ```bash
-    cp .env.example .env
-    ```
+    Configuration values are read via `os.getenv` with sensible defaults. No `.env` file is required; parameters can be overridden directly in the `docker-compose.yml` or passed as environment variables.
 
 3.  **Start the Infrastructure**
     ```bash
@@ -123,35 +118,35 @@ graph TD
 ## 🖥️ Usage Guide
 
 ### 1. Access Points
-* **Airflow UI:** `http://localhost:8080` (User/Pass: `airflow`/`airflow`)
+* **Airflow UI:** `http://localhost:8081` (User/Pass: `airflow`/`airflow`)
 * **Streamlit Dashboard:** `http://localhost:8501`
-* **FastAPI Docs:** `http://localhost:8000/docs`
+* **FastAPI Docs:** `http://localhost:8080/docs`
 * **PostgreSQL:** Port `5432`
 
 ### 2. Running Pipeline A (Sales Batch)
-The system simulates an S3 upload via LocalStack.
-1.  Ensure `sales_data.csv` is in `data/raw/` folder.
+The system now ingests two CSV sources, syncing them to LocalStack S3 before transformation.
+1.  Place `sales_data.csv` and `campaign_product.csv` in the `data/raw/` folder (they can be dropped by the school pusher tool directly).
 2.  Trigger the **`sales_daily_ingest`** task in the Airflow DAG `sales_pipeline`.
-3.  Monitor execution in the logs and check Streamlit dashboard for results.
+3.  Monitor execution in the logs and verify that both `sales` and `campaign_product` tables are populated; the Streamlit dashboard will reflect the campaign linkages.
 
 ### 3. Running Pipeline B (Customer Reviews - Real-Time)
-Pipeline B implements a lightweight micro-batch architecture via FastAPI (no Kafka, no Spark).
+Pipeline B has been simplified into a synchronous micro-batch API; **Airflow is no longer involved**.
 
 **Architecture:**
-- **Ingestion:** Python script (`python __main__.py PUSH N`) sends micro-batches of customer feedback JSON to FastAPI.
-- **API Endpoint:** `POST /feedbacks` receives a list of feedback objects.
-- **Sentiment Analysis:** NLTK classification assigns `sentiments` (1 = Positive/Neutral, 0 = Negative).
-- **Fault Tolerance (DLQ):** Pydantic validates each object. Valid feedbacks → `feedbacks` table. Corrupted objects → `rejected_feedbacks` table (with rejection reason) for quality metrics.
+- **Ingestion:** Python script (`python __main__.py PUSH N`), the course tool `api_pusher`, or any HTTP client sends micro-batches of customer feedback JSON to `POST /afc/api`. The `api_pusher` tool is pre‑configured to drop CSVs in `data/raw/` and to target `http://localhost:8080/afc/api` for JSON feedbacks.
+- **API Endpoint:** `POST /afc/api` performs validation and NLP in a single call.
+- **Sentiment Analysis:** NLTK classification runs on the fly and returns a `sentiment_score` (1 = Positive/Neutral, 0 = Negative).
+- **Fault Tolerance (DLQ):** Pydantic validates each object. Valid feedbacks are inserted into the `feedbacks` table. Invalid objects are written to `rejected_feedbacks` with a rejection reason.
 
 **Example:** Send feedbacks via micro-batch script:
 ```bash
-python __main__.py PUSH 5  # Push 5 feedbacks from data/raw/feedback_data.json
+python __main__.py PUSH 5  # Push 5 feedbacks from data/raw/feedback_data.json to http://localhost:8080/afc/api
 ```
 
 **Manual Test (curl):**
 ```bash
 curl -X 'POST' \
-  'http://localhost:8000/feedbacks' \
+  'http://localhost:8080/afc/api' \
   -H 'Content-Type: application/json' \
   -d '[
   {
@@ -163,7 +158,7 @@ curl -X 'POST' \
 ]'
 ```
 
-Response includes success count, rejection count, and quality metrics.
+Responses include success count, rejection count, quality percentage, and rejection details.
 
 ---
 
@@ -201,10 +196,3 @@ user739,2025-07-15,France,Grilled Tenders,1,8.76,8.76
 ]
 ```
 
----
-
-## 👤 Author
-
-**[Adel ZAIRI]** 
-
-*Project delivered for Capgemini.*
