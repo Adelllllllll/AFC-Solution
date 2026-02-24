@@ -33,7 +33,7 @@ graph TD
 ```
 
 ### Key Technical Features
-* **Unified Storage:** PostgreSQL handles both structured relational data (`Sales`) and semi-structured data (`Reviews` as **JSONB**).
+* **Unified Storage:** PostgreSQL stores **tous** les jeux de données de manière relationnelle ; la colonne JSONB a été supprimée.
 * **LocalStack Integration:** Simulates AWS S3 for a realistic cloud-native batch workflow.
 * **AI-Powered:** Uses **NLTK VADER** to compute sentiment scores synchronously within the API.
 * **Infrastructure as Code:** 100% Dockerized environment.
@@ -63,23 +63,34 @@ graph TD
 ├── dags/
 │   └── sales_pipeline.py       # DAG Airflow orchestrant la pipeline batch (sales + campaign_product)
 ├── data/
-│   ├── raw/                    # Données brutes (sales_data.csv & campaign_product.csv)
+│   ├── raw/
+│   │   ├── sales_data.csv      # Sales data source
+│   │   ├── campaign_product.csv# Campaign mapping source
 │   │   └── feedback_data.json  # Historique d'avis
-│   └── processed/              # Données nettoyées prêtes pour la BDD
+│   └── processed/
+│       └── cleaned_sales_data.csv # Output du nettoyage
 ├── src/                        # Logique métier Python (PythonOperators + API)
+│   ├── __init__.py
 │   ├── ingest_s3.py            # Upload des données vers LocalStack S3
-│   ├── clean_data.py           # Nettoyage Pandas (Dédoublonnage, typage)
-│   ├── load_postgres.py        # Insertion idempotente dans PostgreSQL
-│   └── api_feedback.py         # FastAPI endpoint /afc/api (synchronous micro‑batch)
-├── docker-compose.yml          # Infrastructure locale (Airflow, Postgres, LocalStack, FastAPI)
-└── requirements.txt            # Dépendances Python
+│   ├── clean_data.py           # Nettoyage & transformation (Pandas)
+│   ├── load_postgres.py        # PostgreSQL insert/update + vues
+│   └── api_feedback.py         # FastAPI micro‑batch feedback service
+├── dashboard.py                # Application Streamlit
+├── explore_data.ipynb          # Data exploration notebook
+├── docker-compose.yml          # Docker infrastructure
+├── README.md                   # User documentation
+├── README_COPILOT.md           # Technical specifications
+├── requirements.txt            # Python dependencies
+├── logs/                       # Airflow DAG execution logs
+└── localstack_data/            # LocalStack S3 simulation storage
 ```
 
 ## État d'avancement
 
-- **Étape 1 — Pipeline Batch:** Fait — Ingestion S3, Orchestration Airflow, Nettoyage Pandas, Chargement idempotent dans PostgreSQL (TRUNCATE + INSERT).
-- **Étape 2 — Pipeline Temps Réel (FastAPI Micro-Batch):** Implémentée. L'API traite désormais les avis en temps réel via `POST /afc/api`, réalise la validation Pydantic, exécute le NLP instantané et écrit directement dans PostgreSQL (success + DLQ).
-- **Étape 3 — Dashboard / Streamlit:** ⏳ À venir
+- **Pipeline A — Batch Sales :** complètement déployée; DAG stable; tables `sales` et `campaign_product` alimentées quotidiennement.
+- **Pipeline B — Feedbacks Temps‑Réel :** service FastAPI opérationnel, validations Pydantic + NLP, insertions dans `feedbacks` et DLQ en live.
+- **Dashboard Streamlit :** déployé, interrogeant les trois vues SQL, fournissant une interface BI complète.
+- **Projet :** 100 % livré, testé et documenté.
 
 ---
 
@@ -112,9 +123,19 @@ graph TD
 
 ### 1. Access Points
 * **Airflow UI:** `http://localhost:8081` (User/Pass: `airflow`/`airflow`)
-* **Streamlit Dashboard:** `http://localhost:8501`
+* **Streamlit Dashboard:** `http://localhost:8501` (lancez via `streamlit run dashboard.py`)
 * **FastAPI Docs:** `http://localhost:8080/docs`
 * **PostgreSQL:** Port `5432`
+
+### 2. Dashboard Streamlit
+Le Dashboard interroge directement les trois vues SQL (`view_sales_by_country`, `view_campaign_feedback_stats`, `view_global_kpi`).
+
+Fonctionnalités principales :
+1. **Filtres dynamiques** en sidebar : plage de dates, pays, produits, recherche de campagne.
+2. **KPIs globaux** mis à jour automatiquement (CA total, volume, satisfaction, nombre d'avis).
+3. **Navigation par onglets** : ventes & géographie, marketing & campagnes, analyse corrélationnelle.
+4. **Corrélation** : scatter plot croisant chiffre d'affaires et score de satisfaction ; zoom utilisateur et export CSV.
+5. Téléchargement des données filtrées en CSV depuis chaque onglet.
 
 ### 2. Running Pipeline A (Sales Batch)
 The system now ingests two CSV sources, syncing them to LocalStack S3 before transformation.

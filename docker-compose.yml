@@ -127,3 +127,19 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+
+  # --- NOUVEAU : Le bloc Streamlit pour le Dashboard ---
+  streamlit:
+    build: .
+    container_name: ndai_streamlit
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+    ports:
+      - "8501:8501"
+    depends_on:
+      airflow-webserver:
+        condition: service_healthy
