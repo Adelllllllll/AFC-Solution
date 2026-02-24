@@ -31,7 +31,9 @@ def get_db_engine():
         raise
 
 def init_table(engine):
-    """Create tables with schema if they don't exist."""
+    """Create tables and specialized views with schema if they don't exist."""
+    
+    # --- 1. TABLES ---
     create_sales_sql = f"""
     CREATE TABLE IF NOT EXISTS {TABLE_SALES_NAME} (
         id SERIAL PRIMARY KEY,
@@ -54,13 +56,85 @@ def init_table(engine):
         loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """
+
+    create_feedbacks_sql = """
+    CREATE TABLE IF NOT EXISTS feedbacks (
+        id SERIAL PRIMARY KEY,
+        username VARCHAR(50),
+        feedback_date DATE,
+        campaign_id VARCHAR(50),
+        comment TEXT,
+        sentiments INT,
+        ingestion_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """
+
+    # --- 2. VUE N°1 : LA VUE PAYS (Géographie & Ventes) ---
+    create_view_country_sql = f"""
+    CREATE OR REPLACE VIEW view_sales_by_country AS
+    SELECT 
+        sale_date,
+        country,
+        product,
+        SUM(total_amount) AS total_revenue,
+        SUM(quantity) AS total_sold
+    FROM {TABLE_SALES_NAME}
+    GROUP BY sale_date, country, product;
+    """
+
+    # --- 3. VUE N°2 : LA VUE CAMPAGNE (Performances des Avis) ---
+    create_view_campaign_sql = f"""
+    CREATE OR REPLACE VIEW view_campaign_feedback_stats AS
+    SELECT 
+        f.feedback_date,
+        f.campaign_id,
+        cp.product,
+        AVG(f.sentiments) AS avg_sentiment,
+        COUNT(f.id) AS reviews_count
+    FROM feedbacks f
+    LEFT JOIN {TABLE_CAMP_NAME} cp ON f.campaign_id = cp.campaign_id
+    GROUP BY f.feedback_date, f.campaign_id, cp.product;
+    """
+
+    # --- 4. VUE N°3 : LA VUE GLOBALE (Corrélation Ventes vs Sentiments) ---
+    create_view_global_sql = f"""
+    CREATE OR REPLACE VIEW view_global_kpi AS
+    WITH daily_sales AS (
+        SELECT sale_date, product, SUM(total_amount) AS total_revenue, SUM(quantity) AS total_sold
+        FROM {TABLE_SALES_NAME} GROUP BY sale_date, product
+    ),
+    daily_feedbacks AS (
+        SELECT feedback_date, campaign_id, AVG(sentiments) AS avg_sentiment, COUNT(id) AS total_reviews
+        FROM feedbacks GROUP BY feedback_date, campaign_id
+    )
+    SELECT 
+        s.sale_date AS date,
+        s.product,
+        s.total_revenue,
+        s.total_sold,
+        cp.campaign_id,
+        COALESCE(f.avg_sentiment, 0) AS sentiment_score,
+        COALESCE(f.total_reviews, 0) AS reviews_count
+    FROM daily_sales s
+    LEFT JOIN {TABLE_CAMP_NAME} cp ON s.product = cp.product
+    LEFT JOIN daily_feedbacks f ON cp.campaign_id = f.campaign_id AND s.sale_date = f.feedback_date;
+    """
+
     try:
         with engine.begin() as conn:
+            # Création des tables
             conn.execute(text(create_sales_sql))
             conn.execute(text(create_camp_sql))
-        logger.info(f"Tables '{TABLE_SALES_NAME}' and '{TABLE_CAMP_NAME}' schemas validated.")
+            conn.execute(text(create_feedbacks_sql))
+            
+            # Création des 3 vues
+            conn.execute(text(create_view_country_sql))
+            conn.execute(text(create_view_campaign_sql))
+            conn.execute(text(create_view_global_sql))
+            
+        logger.info(f"Tables and 3 Specialized Views (Country, Campaign, Global) schemas validated.")
     except Exception as e:
-        logger.error(f"Failed to create tables: {e}")
+        logger.error(f"Failed to create tables or views: {e}")
         raise
 
 def clear_existing_data(engine):
