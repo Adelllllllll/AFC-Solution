@@ -7,3 +7,6 @@ uvicorn
 pydantic
 streamlit
 plotly
+transformers
+torch
+sentencepiece

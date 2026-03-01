@@ -1,11 +1,15 @@
 import os
 import json
 import logging
-import random
+# L'import "random" n'est plus nécessaire !
 from typing import List, Dict, Any
 from fastapi import FastAPI
+import pandas as pd
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import create_engine, text
+
+# NOUVEAU : On importe la fonction depuis le fichier NLTK_Analysis
+from src.sentiments_anaylisis import analyze_text_sentiment
 
 # --- Configuration Logging ---
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -21,7 +25,7 @@ DB_DB = os.getenv("POSTGRES_DB", "airflow")
 # --- Initialisation FastAPI ---
 app = FastAPI(
     title="N.D.A.I Feedback API", 
-    description="API temps réel avec tolérance aux pannes (DLQ). Analyse NLP simulée pour le moment."
+    description="API temps réel avec tolérance aux pannes (DLQ) et analyse NLP XLM-RoBERTa intégrée."
 )
 
 # --- Modèle Pydantic (Tolérance aux pannes) ---
@@ -73,14 +77,28 @@ def init_db():
 def on_startup():
     init_db()
 
+# MODIFIÉ : On remplace le comportement aléatoire par l'IA NLTK
 def set_sentiments(text_to_analyze: str) -> int:
     """
-    Fonction 'Bouchon' (Stub).
-    Simule l'étape de NLP en attribuant aléatoirement 0 ou 1.
-    Sera remplacée par l'implémentation NLTK plus tard.
+    Appelle le modèle NLP XLM-RoBERTa pour définir le sentiment.
     """
-    # On simule un calcul arbitraire
-    return random.choice([0, 1])
+    return analyze_text_sentiment(text_to_analyze)
+
+def update_local_json_export():
+    """Exporte la table feedbacks en JSON physique dans data/processed/ de manière silencieuse."""
+    try:
+        engine = get_db_engine()
+        df_export = pd.read_sql("SELECT * FROM feedbacks", engine)
+        export_path = "/app/data/processed/feedbacks_export.json"
+        df_export.to_json(export_path, orient="records", date_format="iso", force_ascii=False, indent=4)
+        logger.info(f"✅ Export auto réussi : {len(df_export)} lignes sauvegardées dans le JSON.")
+    except Exception as e:
+        logger.error(f"❌ Erreur lors de l'export automatique : {e}")
+
+@app.get("/health")
+def health_check():
+    """Endpoint de santé pour Docker."""
+    return {"status": "healthy"}
 
 @app.post("/afc/api")
 async def receive_feedbacks(payload: List[Dict[str, Any]]):
@@ -101,14 +119,14 @@ async def receive_feedbacks(payload: List[Dict[str, Any]]):
                 "error_reason": str(e)
             })
             
-    # 2. ENRICHISSEMENT (SIMULÉ) ET INSERTION
+    # 2. ENRICHISSEMENT (IA) ET INSERTION
     engine = get_db_engine()
     
     with engine.connect() as conn:
         # A. Insertion des succès
         if valid_feedbacks:
             for fb in valid_feedbacks:
-                # Appel de notre fonction bouchon
+                # Appel de notre fonction IA
                 sentiment_val = set_sentiments(fb.comment)
                 
                 insert_valid_sql = text("""
@@ -137,7 +155,10 @@ async def receive_feedbacks(payload: List[Dict[str, Any]]):
                 
         conn.commit()
 
-    # 3. RÉPONSE
+    # 3. MISE À JOUR AUTOMATIQUE DU FICHIER JSON LOCAL
+    update_local_json_export()
+
+    # 4. RÉPONSE
     response_msg = (
         f"Traitement terminé. Reçus : {len(payload)} | "
         f"Succès : {len(valid_feedbacks)} | "

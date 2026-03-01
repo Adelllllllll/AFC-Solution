@@ -100,8 +100,14 @@ def init_table(engine):
     create_view_global_sql = f"""
     CREATE OR REPLACE VIEW view_global_kpi AS
     WITH daily_sales AS (
-        SELECT sale_date, product, SUM(total_amount) AS total_revenue, SUM(quantity) AS total_sold
-        FROM {TABLE_SALES_NAME} GROUP BY sale_date, product
+        SELECT 
+            sale_date, 
+            country,     -- AJOUT DU PAYS ICI
+            product, 
+            SUM(total_amount) AS total_revenue, 
+            SUM(quantity) AS total_sold
+        FROM {TABLE_SALES_NAME} 
+        GROUP BY sale_date, country, product  -- AJOUT DU PAYS AU GROUP BY
     ),
     daily_feedbacks AS (
         SELECT feedback_date, campaign_id, AVG(sentiments) AS avg_sentiment, COUNT(id) AS total_reviews
@@ -109,6 +115,7 @@ def init_table(engine):
     )
     SELECT 
         s.sale_date AS date,
+        s.country,       -- AJOUT DU PAYS DANS LE RENDU FINAL
         s.product,
         s.total_revenue,
         s.total_sold,

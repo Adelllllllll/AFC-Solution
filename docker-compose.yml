@@ -1,5 +1,8 @@
 version: '3.8'
 
+# ─────────────────────────────────────────────────────────────────────────────
+# CONFIGURATION COMMUNE AIRFLOW
+# ─────────────────────────────────────────────────────────────────────────────
 x-airflow-common:
   &airflow-common
   image: ${AIRFLOW_IMAGE_NAME:-apache/airflow:2.10.2}
@@ -10,35 +13,30 @@ x-airflow-common:
     AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
-    # Add src folder to Python path for imports
     PYTHONPATH: /opt/airflow
-    
-    # --- NOUVEAU : Ajout de fastapi, uvicorn et pydantic pour qu'Airflow puisse lire nos fichiers src/ sans crasher ---
-    _PIP_ADDITIONAL_REQUIREMENTS: "pandas boto3 sqlalchemy psycopg2-binary fastapi uvicorn pydantic"
-    
-    # Configuration for pipeline scripts
-    # PostgreSQL connection settings
+    _PIP_ADDITIONAL_REQUIREMENTS: "pandas boto3 sqlalchemy psycopg2-binary" #
     POSTGRES_USER: airflow
     POSTGRES_PASSWORD: airflow
     POSTGRES_DB: airflow
     POSTGRES_HOST: postgres
     POSTGRES_PORT: 5432
-    # LocalStack (S3 simulation) settings
     LOCALSTACK_URL: http://localstack:4566
     AWS_ACCESS_KEY_ID: test
     AWS_SECRET_ACCESS_KEY: test
     AWS_DEFAULT_REGION: us-east-1
-    # File paths (relative to container)
     CLEAN_FILE_PATH: /opt/airflow/data/processed/cleaned_sales_data.csv
-
   volumes:
     - ./dags:/opt/airflow/dags
     - ./src:/opt/airflow/src
     - ./data:/opt/airflow/data
     - ./logs:/opt/airflow/logs
+  networks:
+    - afc_network #
 
+# ─────────────────────────────────────────────────────────────────────────────
+# SERVICES
+# ─────────────────────────────────────────────────────────────────────────────
 services:
-  # PostgreSQL: stores Airflow metadata and sales data
   postgres:
     image: postgres:13
     container_name: ndai_postgres
@@ -52,8 +50,9 @@ services:
       test: ["CMD", "pg_isready", "-U", "airflow"]
       interval: 5s
       retries: 5
+    networks:
+      - afc_network
 
-  # LocalStack: simulates AWS S3
   localstack:
     image: localstack/localstack
     container_name: ndai_localstack
@@ -65,8 +64,9 @@ services:
       - DEBUG=1
     volumes:
       - "./localstack_data:/var/lib/localstack"
+    networks:
+      - afc_network
 
-  # --- NOUVEAU : Le bloc FastAPI pour la Pipeline B ---
   fastapi:
     image: python:3.10-slim
     container_name: ndai_fastapi
@@ -76,9 +76,12 @@ services:
       POSTGRES_DB: airflow
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
+      HF_HOME: /root/.cache/huggingface
     volumes:
       - ./src:/app/src
       - ./requirements.txt:/app/requirements.txt
+      - ./data:/app/data
+      - hf_cache:/root/.cache/huggingface
     working_dir: /app
     command: bash -c "pip install -r requirements.txt && uvicorn src.api_feedback:app --host 0.0.0.0 --port 8000 --reload"
     ports:
@@ -86,10 +89,18 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s 
+      timeout: 5s
+      retries: 15 
+      start_period: 60s 
+    networks:
+      - afc_network
 
-  # Airflow Webserver: web UI for monitoring
   airflow-webserver:
     <<: *airflow-common
+    container_name: afc-solution-airflow-webserver-1
     command: webserver
     ports:
       - "8081:8080"
@@ -97,16 +108,17 @@ services:
       test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
       interval: 10s
       timeout: 10s
-      retries: 5
+      retries: 10 
+      start_period: 40s
     depends_on:
       postgres:
         condition: service_healthy
       airflow-init:
         condition: service_completed_successfully
 
-  # Airflow Scheduler: orchestrates task execution
   airflow-scheduler:
     <<: *airflow-common
+    container_name: afc-solution-airflow-scheduler-1
     command: scheduler
     depends_on:
       postgres:
@@ -114,9 +126,9 @@ services:
       airflow-init:
         condition: service_completed_successfully
 
-  # Airflow Init: initializes database and creates default user
   airflow-init:
     <<: *airflow-common
+    container_name: afc-solution-airflow-init-1
     command: version
     environment:
       <<: *airflow-common-env
@@ -128,10 +140,10 @@ services:
       postgres:
         condition: service_healthy
 
-  # --- NOUVEAU : Le bloc Streamlit pour le Dashboard ---
   streamlit:
     build: .
     container_name: ndai_streamlit
+    profiles: ["ui"]
     environment:
       POSTGRES_USER: airflow
       POSTGRES_PASSWORD: airflow
@@ -140,6 +152,22 @@ services:
       POSTGRES_PORT: 5432
     ports:
       - "8501:8501"
+    volumes:
+      - ./dashboard.py:/app/dashboard.py
+      - ./data:/app/data
+      - ./src:/app/src
     depends_on:
       airflow-webserver:
         condition: service_healthy
+    networks:
+      - afc_network
+
+# ─────────────────────────────────────────────────────────────────────────────
+# RÉSEAUX & VOLUMES NOMMÉS
+# ─────────────────────────────────────────────────────────────────────────────
+networks:
+  afc_network:
+    driver: bridge
+
+volumes:
+  hf_cache:
