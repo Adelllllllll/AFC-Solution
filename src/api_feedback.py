@@ -9,7 +9,7 @@ from pydantic import BaseModel, ValidationError
 from sqlalchemy import create_engine, text
 
 # NOUVEAU : On importe la fonction depuis le fichier NLTK_Analysis
-from src.sentiments_anaylisis import analyze_text_sentiment
+from src.sentiments_analysis import analyze_text_sentiment
 
 # --- Configuration Logging ---
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
