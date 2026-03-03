@@ -254,6 +254,7 @@ if not df_global.empty:
     mask_global = (
         (df_global['date'] >= start_date) &
         (df_global['date'] <= end_date) &
+        (df_global['country'].isin(selected_countries)) &
         (df_global['product'].isin(selected_products))
     )
     fc = df_global[mask_global & df_global['campaign_id'].notna()].copy()
@@ -314,19 +315,35 @@ with tab1:
     if fs.empty:
         st.info("No sales data for current filters.")
     else:
-        # ── Revenue over time ──────────────────
-        st.markdown('<p class="section-header">Revenue Trend</p>'
-                    '<p class="section-sub">How is overall revenue evolving?</p>',
-                    unsafe_allow_html=True)
-
-        trend = (
+        # ── 0. SMART INSIGHTS (Executive Summary Metrics) ──
+        # On calcule des indicateurs rapides pour donner du contexte au graphique de tendance
+        trend_data = (
             fs.set_index('sale_date')
             .resample(pd_freq)['total_revenue']
             .sum()
             .reset_index()
         )
+        
+        avg_rev_period = trend_data['total_revenue'].mean()
+        max_rev_row = trend_data.loc[trend_data['total_revenue'].idxmax()]
+        
+        m1, m2, m3 = st.columns(3)
+        with m1:
+            st.metric("Avg Revenue / Period", f"${avg_rev_period:,.0f}")
+        with m2:
+            st.metric("Peak Revenue Date", max_rev_row['sale_date'].strftime('%Y-%m-%d'))
+        with m3:
+            st.metric("Peak Revenue Value", f"${max_rev_row['total_revenue']:,.0f}")
+
+        st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+        # ── 1. Revenue Trend ──────────────────
+        st.markdown('<p class="section-header">Revenue Trend</p>'
+                    '<p class="section-sub">How is overall revenue evolving over the selected timeframe?</p>',
+                    unsafe_allow_html=True)
+
         fig_trend = px.area(
-            trend, x='sale_date', y='total_revenue',
+            trend_data, x='sale_date', y='total_revenue',
             labels={'sale_date': 'Date', 'total_revenue': 'Revenue (USD)'},
             color_discrete_sequence=[BRAND_COLORS[0]],
             template=CHART_TEMPLATE,
@@ -341,7 +358,7 @@ with tab1:
 
         st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
-        # ── Product performance + Country revenue ─
+        # ── 2. Product performance + Country revenue ─
         colA, colB = st.columns([3, 2])
 
         with colA:
@@ -371,19 +388,19 @@ with tab1:
             )
             st.plotly_chart(fig_prod, use_container_width=True)
 
-            total = prod_rev['revenue'].sum()
-            top = prod_rev.iloc[-1]
-            share = top['revenue'] / total * 100 if total else 0
+            # Insight dynamique sous le graphique
+            total_p = prod_rev['revenue'].sum()
+            top_p = prod_rev.iloc[-1]
+            share_p = top_p['revenue'] / total_p * 100 if total_p else 0
             st.markdown(
-                f'<div class="insight-box"><p>📌 <strong>{top["product"]}</strong> generates '
-                f'<strong>{share:.0f}%</strong> of revenue among selected products — '
-                f'your highest-performing SKU.</p></div>',
+                f'<div class="insight-box"><p>📌 <strong>{top_p["product"]}</strong> generates '
+                f'<strong>{share_p:.0f}%</strong> of revenue among selected products.</p></div>',
                 unsafe_allow_html=True
             )
 
         with colB:
             st.markdown('<p class="section-header">Revenue by Country</p>'
-                        '<p class="section-sub">Where are sales strongest?</p>',
+                        '<p class="section-sub">Geographical sales distribution.</p>',
                         unsafe_allow_html=True)
 
             country_rev = (
@@ -407,20 +424,46 @@ with tab1:
             )
             st.plotly_chart(fig_geo, use_container_width=True)
 
-            if not country_rev.empty:
-                top_country = country_rev.iloc[0]
-                share_c = top_country['total_revenue'] / country_rev['total_revenue'].sum() * 100
-                st.markdown(
-                    f'<div class="success-box"><p>🌍 <strong>{top_country["country"]}</strong> leads '
-                    f'with <strong>{share_c:.0f}%</strong> of total revenue in the selected period.</p></div>',
-                    unsafe_allow_html=True
-                )
+            # Analyse du Panier Moyen (AOV) par Pays
+            st.markdown('<p style="font-size:0.85rem; font-weight:bold; margin-top:15px; color:#475569;">Average Order Value (AOV) by Country</p>', unsafe_allow_html=True)
+            aov_data = fs.groupby('country').apply(
+                lambda x: x['total_revenue'].sum() / x['total_sold'].sum() if x['total_sold'].sum() > 0 else 0
+            ).reset_index(name='aov').sort_values('aov', ascending=False)
+            
+            fig_aov = px.line(
+                aov_data, x='country', y='aov', markers=True, 
+                template=CHART_TEMPLATE, color_discrete_sequence=[BRAND_COLORS[3]]
+            )
+            fig_aov.update_layout(height=180, margin=dict(l=0, r=0, t=10, b=0), yaxis_title="AOV ($)", xaxis_title=None)
+            st.plotly_chart(fig_aov, use_container_width=True)
 
         st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
-        # ── Monthly heatmap ──────────────────────
+        # ── 3. Pareto Analysis (Concentration) ──
+        st.markdown('<p class="section-header">Revenue Concentration (Pareto)</p>'
+                    '<p class="section-sub">Identifying key products driving 80% of total revenue.</p>', 
+                    unsafe_allow_html=True)
+        
+        pareto_df = fs.groupby('product')['total_revenue'].sum().sort_values(ascending=False).reset_index()
+        pareto_df['cum_percentage'] = 100 * pareto_df['total_revenue'].cumsum() / pareto_df['total_revenue'].sum()
+        
+        fig_pareto = go.Figure()
+        fig_pareto.add_trace(go.Bar(x=pareto_df['product'], y=pareto_df['total_revenue'], name="Revenue", marker_color=BRAND_COLORS[0]))
+        fig_pareto.add_trace(go.Scatter(x=pareto_df['product'], y=pareto_df['cum_percentage'], name="% Cumulative", yaxis="y2", line=dict(color=BRAND_COLORS[3], width=3)))
+        
+        fig_pareto.update_layout(
+            template=CHART_TEMPLATE, height=350, showlegend=False,
+            yaxis=dict(title="Revenue ($)"),
+            yaxis2=dict(title="Cumulative %", overlaying="y", side="right", range=[0, 110], dtick=20),
+            margin=dict(l=0, r=0, t=10, b=0), font_family="DM Sans"
+        )
+        st.plotly_chart(fig_pareto, use_container_width=True)
+
+        st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+        # ── 4. Monthly heatmap ──────────────────────
         st.markdown('<p class="section-header">Revenue Heatmap — Product × Month</p>'
-                    '<p class="section-sub">Which products are seasonal? Where are the gaps?</p>',
+                    '<p class="section-sub">Seasonality check: Where are the sales peaks and gaps?</p>',
                     unsafe_allow_html=True)
 
         heat_df = fs.copy()
@@ -435,14 +478,14 @@ with tab1:
             labels=dict(x="Month", y="Product", color="Revenue"),
         )
         fig_heat.update_layout(
-            height=260, margin=dict(l=0, r=0, t=10, b=0),
+            height=280, margin=dict(l=0, r=0, t=10, b=0),
             font_family="DM Sans", coloraxis_colorbar_title="USD",
         )
         st.plotly_chart(fig_heat, use_container_width=True)
 
         st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
-        # ── Raw data ────────────────────────────
+        # ── 5. Raw data ────────────────────────────
         with st.expander("📋 View raw sales data"):
             st.dataframe(
                 fs.sort_values('sale_date', ascending=False).reset_index(drop=True),
@@ -452,7 +495,6 @@ with tab1:
                 "⬇ Download CSV", fs.to_csv(index=False),
                 file_name="filtered_sales.csv", mime="text/csv",
             )
-
 # ══════════════════════════════════════════════
 # TAB 2 – CAMPAIGN IMPACT & AI (Basé sur la Vue Globale)
 # ══════════════════════════════════════════════
